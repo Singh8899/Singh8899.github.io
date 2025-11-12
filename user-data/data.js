@@ -141,18 +141,9 @@ const data ={
   ],
   "footer": [
     {
-      "label": "Links",
-      "data": [
-        {
-          "text": "Github",
-          "link": "https://github.com/Singh8899"
-        }
-      ]
-    },
-    {
       "label": "copyright-text",
       "data": [
-        "Built with HTML, CSS, JavaScript, and ❤️"
+        "Hand-coded with HTML, CSS, JavaScript, and good vibes ✨"
       ]
     }
   ]
