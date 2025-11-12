@@ -7,6 +7,8 @@ import {
   contactLinks,
 } from "./user-data/data.js";
 import { html, render } from "https://unpkg.com/lit-html?module";
+import { unsafeHTML } from "https://unpkg.com/lit-html/directives/unsafe-html.js?module";
+import { marked } from "https://cdn.jsdelivr.net/npm/marked@5.1.1/lib/marked.esm.js";
 
 import { URLs, GITHUB_USERNAME } from "./user-data/urls.js";
 
@@ -62,7 +64,15 @@ function mapBasicResponse(basics) {
 
 function populateBio(items, id) {
   const bioTag = document.getElementById(id);
-  const bioTemplate = html` ${items.map((bioItem) => html`<p>${bioItem}</p>`)}`;
+  // If the bio items contain HTML, render them as HTML using unsafeHTML.
+  const bioTemplate = html`
+    ${items.map((bioItem) => {
+      const looksLikeHtml = /<[^>]+>/.test(bioItem);
+      return looksLikeHtml
+        ? html`${unsafeHTML(bioItem)}`
+        : html`<p>${bioItem}</p>`;
+    })}
+  `;
   render(bioTemplate, bioTag);
 }
 
@@ -135,9 +145,15 @@ function populateExp_Edu(items, id) {
   if (!mainContainer || !items?.length) return;
 
   const detailsTemplate = (details) => html`
-    ${details.map(
-      (detail) => html` <p class="timeline-text">&blacksquare; ${detail}</p> `
-    )}
+    ${details.map((detail) => {
+      const urlMatch = (detail || "").match(/https?:\/\/\S+/);
+      if (urlMatch) {
+        const url = urlMatch[0];
+        const text = detail.replace(url, "").trim();
+        return html` <p class="timeline-text">&blacksquare; ${text} <a href="${url}" target="_blank" rel="noopener">${url}</a></p> `;
+      }
+      return html` <p class="timeline-text">&blacksquare; ${detail}</p> `;
+    })}
   `;
 
   const tagsTemplate = (tags) => html`
@@ -286,19 +302,60 @@ populateSkills(skills, "skills");
 async function fetchGitHubProfile(username) {
   if (!username) return;
   try {
+    console.log("fetchGitHubProfile: fetching GitHub profile for", username);
     const resp = await fetch(`https://api.github.com/users/${username}`);
-    if (!resp.ok) return;
+    if (!resp.ok) {
+      console.warn("fetchGitHubProfile: GitHub API responded with status", resp.status);
+      return;
+    }
     const data = await resp.json();
+    console.log("fetchGitHubProfile: received data", data);
+    // set avatar if available
     if (data?.avatar_url) {
       const img = document.getElementById("profile-img");
       if (img) img.src = data.avatar_url;
     }
+    // if GitHub profile has a bio, use it to replace the current bio display
+    if (data?.bio) {
+      // populateBio is defined earlier and will replace the #bio content
+      try {
+        // include a small source note so it's visually clear the bio is coming from GitHub
+        populateBio([data.bio, "(source: GitHub)"], "bio");
+      } catch (e) {
+        // silent fail if populateBio is not available
+      }
+    }
   } catch (e) {
-    // silent fail
+    console.error("fetchGitHubProfile: error fetching GitHub profile", e);
   }
 }
 
 fetchGitHubProfile(GITHUB_USERNAME);
+// attempt to fetch the profile README (repo named same as username) and render it as the About section
+async function fetchProfileReadme(username) {
+  if (!username) return;
+  try {
+    console.log("fetchProfileReadme: fetching README for", username);
+    const tryUrl = (branch) => `https://raw.githubusercontent.com/${username}/${username}/${branch}/README.md`;
+    let resp = await fetch(tryUrl("main"));
+    if (!resp.ok) {
+      resp = await fetch(tryUrl("master"));
+      if (!resp.ok) {
+        console.warn("fetchProfileReadme: README not found on main or master");
+        return;
+      }
+    }
+    const md = await resp.text();
+    // convert markdown to HTML and render it into the bio area
+    const htmlContent = marked.parse(md || "");
+    populateBio([htmlContent], "bio");
+    console.log("fetchProfileReadme: README rendered into About section");
+  } catch (e) {
+    console.error("fetchProfileReadme: error fetching README", e);
+  }
+}
+
+fetchProfileReadme(GITHUB_USERNAME);
 
 fetchReposFromGit(gitRepo);
 fetchGitConnectedData(gitConnected);
